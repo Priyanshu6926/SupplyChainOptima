@@ -1,0 +1,104 @@
+// ============================================================================
+// SupplyChainOptima: Executive Power BI DAX Measures Specification
+// Author: Priyanshu
+// Target Tables: _Measures, vw_sku_metrics, scenario_results, orders, shipping_logs
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. Core KPIs: Supply Chain Health (Page 1)
+// ----------------------------------------------------------------------------
+
+// Total Portfolio Sales Revenue
+Total Revenue = 
+SUM(orders[sales_amount])
+
+// Overall On-Time Delivery Rate %
+On Time Delivery Rate % = 
+DIVIDE(
+    CALCULATE(COUNTROWS(shipping_logs), shipping_logs[late_delivery_risk] = 0),
+    COUNTROWS(shipping_logs),
+    0
+)
+
+// Late Delivery Risk %
+Late Delivery Risk % = 
+DIVIDE(
+    CALCULATE(COUNTROWS(shipping_logs), shipping_logs[late_delivery_risk] = 1),
+    COUNTROWS(shipping_logs),
+    0
+)
+
+// Average Supplier Lead Time (Days)
+Average Lead Time Days = 
+AVERAGE(shipping_logs[days_for_shipping_real])
+
+// Total Portfolio Holding Cost
+Total Annual Holding Cost = 
+SUMX(
+    vw_sku_metrics,
+    vw_sku_metrics[holding_cost_per_unit] * vw_sku_metrics[mean_daily_demand] * vw_sku_metrics[mean_lead_time]
+)
+
+
+// ----------------------------------------------------------------------------
+// 2. Scenario Simulator & What-If Engine (Page 2)
+// ----------------------------------------------------------------------------
+
+// (1) Overall Fill Rate % (Post-Optimization)
+Overall Fill Rate % = 
+AVERAGE(scenario_results[service_level_achieved])
+
+// Fill Rate Before Optimization (Static Policy)
+Fill Rate Before % = 
+1 - AVERAGE(scenario_results[stockout_prob_before])
+
+// (2) Stockout Risk Reduction (Percentage Points)
+Stockout Risk Reduction % = 
+AVERAGE(scenario_results[stockout_prob_before]) - AVERAGE(scenario_results[stockout_prob_after])
+
+// Average Stockout Risk After Optimization
+Stockout Risk After % = 
+AVERAGE(scenario_results[stockout_prob_after])
+
+// (3) Total Simulated Cost Savings $
+Total Cost Savings $ = 
+SUM(scenario_results[total_cost_before]) - SUM(scenario_results[total_cost_after])
+
+// Total Simulated Cost (Static Policy)
+Total Cost Before $ = 
+SUM(scenario_results[total_cost_before])
+
+// Total Simulated Cost (Optimized Stochastic Policy)
+Total Cost After $ = 
+SUM(scenario_results[total_cost_after])
+
+// Cost Savings Percentage %
+Cost Savings % = 
+DIVIDE([Total Cost Savings $], [Total Cost Before $], 0)
+
+// Total Recommended Safety Stock Buffer Units
+Total Recommended Safety Stock Units = 
+SUM(scenario_results[recommended_safety_stock])
+
+// (4) Dynamic Scenario Title text that updates based on the selected slicer
+Dynamic Scenario Title = 
+VAR SelectedScenario = SELECTEDVALUE(scenario_results[scenario_name], "All Scenarios (Consolidated)")
+RETURN
+    SWITCH(
+        SelectedScenario,
+        "Baseline", "Executive Scenario: Baseline Operations (Normal Demand & Lead Times)",
+        "Supplier_Delay_25pct", "Executive Stress Test: Port & Logistics Congestion (+25% Supplier Delay)",
+        "Demand_Surge_40pct", "Executive Stress Test: Festive / Peak Season (+40% Demand Surge)",
+        "Executive Scenario Analysis: " & SelectedScenario
+    )
+
+// Dynamic Narrative Summary Callout
+Dynamic Executive Callout = 
+VAR SelectedScenario = SELECTEDVALUE(scenario_results[scenario_name], "Baseline")
+VAR Savings = FORMAT([Total Cost Savings $], "$#,##0")
+VAR RiskCut = FORMAT([Stockout Risk Reduction %], "0.0%")
+VAR FinalCSL = FORMAT([Overall Fill Rate %], "0.0%")
+RETURN
+    "Under the " & SelectedScenario & " scenario, stochastic LP optimization achieves a " & 
+    FinalCSL & " cycle service level, mitigating stockout probability by " & RiskCut & 
+    " while delivering " & Savings & " in net expected inventory holding and penalty cost savings."
